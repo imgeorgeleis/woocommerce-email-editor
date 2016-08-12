@@ -1,0 +1,4 @@
+*** WooCommerce Email Editor Changelog ***
+
+2016.06.16 - version 0.1
+ * First Release

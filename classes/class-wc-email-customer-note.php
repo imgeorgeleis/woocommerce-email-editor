@@ -1,0 +1,345 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit; // Exit if accessed directly
+}
+
+if ( ! class_exists( 'WC_Email_Editor_Customer_Note' ) ) :
+
+/**
+ * Customer Note Order Email.
+ *
+ * Customer note emails are sent when you add a note to an order.
+ *
+ * @class       WC_Email_Customer_Note
+ * @version     2.3.0
+ * @package     WooCommerce/Classes/Emails
+ * @author      WooThemes
+ * @extends     WC_Email
+ */
+class WC_Email_Editor_Customer_Note extends WC_Email {
+
+	/**
+	 * Customer note.
+	 *
+	 * @var string
+	 */
+	public $customer_note;
+
+	/**
+	 * Constructor.
+	 */
+	function __construct() {
+
+		$this->id             = 'customer_note';
+		$this->customer_email = true;
+		$this->title          = __( 'Customer note', 'woocommerce' );
+		$this->description    = __( 'Customer note emails are sent when you add a note to an order.', 'woocommerce' );
+		
+		$this->template_cart	= 'emails/email-cart.php';
+		$this->template_addresses = 'emails/email-addresses.php';
+		$this->template_html  = 'emails/customer-note.php';
+		$this->template_plain = 'emails/plain/customer-note.php';
+
+		$this->subject        = __( 'Note added to your {site_title} order from {order_date}', 'woocommerce');
+		$this->heading        = __( 'A note has been added to your order', 'woocommerce');
+
+		// Triggers
+		add_action( 'woocommerce_new_customer_note_notification', array( $this, 'trigger' ) );
+
+		// Call parent constructor
+		parent::__construct();
+	}
+
+	/**
+	 * Trigger.
+	 *
+	 * @param array $args
+	 */
+	function trigger( $args ) {
+
+		if ( $args ) {
+
+			$defaults = array(
+				'order_id'      => '',
+				'customer_note' => ''
+			);
+
+			$args = wp_parse_args( $args, $defaults );
+
+			extract( $args );
+
+			if ( $order_id && ( $this->object = wc_get_order( $order_id ) ) ) {
+				$this->recipient		= $this->object->billing_email;
+				$this->customer_note	= $customer_note;
+				$user					= $this->object->get_user();
+				
+				// Find/replace
+				$this->find['site-url']				= '{site_url}';
+				$this->find['order-date']			= '{order_date}';
+				$this->find['order-number']			= '{order_number}';
+				$this->find['order-url']			= '{order_url}';
+				$this->find['order-edit-url']		= '{order_edit_url}';
+				$this->find['account-url']			= '{account_url}';
+				$this->find['client-name']			= '{client_name}';
+				$this->find['client-first-name']	= '{client_first_name}';
+				$this->find['client-last-name']		= '{client_last_name}';
+				$this->find['client-email']			= '{client_email}';
+				$this->find['client-tel']			= '{client_tel}';
+				$this->find['customer-note']		= '{customer_note}';
+				$this->find['payment-url']			= '{payment_url}';
+				$this->find['payment-method']		= '{payment_method}';
+				$this->find['billing-first-name']	= '{billing_first_name}';
+				$this->find['billing-last-name']	= '{billing_last_name}';
+				$this->find['addresses']			= '{addresses}';
+				$this->find['cart']					= '{cart}';
+				
+				$this->replace['site-url']			= site_url('/');
+				$this->replace['order-date']		= date_i18n( wc_date_format(), strtotime( $this->object->order_date ) );
+				$this->replace['order-number']		= $this->object->get_order_number();
+				$this->replace['order-url']			= get_permalink($this->object->id);
+				$this->replace['order-edit-url']	= get_edit_post_link($this->object->id);
+				$this->replace['account-url']		= get_permalink( get_option('woocommerce_myaccount_page_id') );
+				$this->replace['client-name']		= $user->data->display_name;
+				$this->replace['client-first-name']	= get_user_meta($user->data->ID, 'first_name', true);
+				$this->replace['client-last-name']	= get_user_meta($user->data->ID, 'last_name', true);
+				$this->replace['client-email']		= $user->data->user_email;
+				$this->replace['client-tel']		= get_user_meta($user->data->ID, 'billing_phone', true);
+				$this->replace['customer-note']		= $this->customer_note;
+				$this->replace['payment-url']		= esc_url( $this->object->get_checkout_payment_url() );
+				$this->replace['payment-method']	= get_post_meta($this->object->id, '_payment_method', true);
+				$this->replace['billing-first-name']= $this->object->billing_first_name;
+				$this->replace['billing-last-name']	= $this->object->billing_last_name;
+				$this->replace['addresses']			= wc_get_template_html($this->template_addresses, array(
+					'order'	=> $this->object,
+					'email'	=> $this,
+				));
+				$this->replace['cart']				= wc_get_template_html($this->template_cart, array(
+					'order'	=> $this->object,
+					'email'	=> $this,
+				));
+			} else {
+				return;
+			}
+		}
+
+		if ( ! $this->is_enabled() || ! $this->get_recipient() ) {
+			return;
+		}
+
+		$this->send( $this->get_recipient(), $this->get_subject(), $this->get_content(), $this->get_headers(), $this->get_attachments() );
+	}
+
+	/**
+	 * Get content html.
+	 *
+	 * @access public
+	 * @return string
+	 */
+	function get_content_html() {
+		return wc_get_template_html( $this->template_html, array(
+			'order'         => $this->object,
+			'email_heading' => $this->get_heading(),
+			'customer_note' => $this->customer_note,
+			'sent_to_admin' => false,
+			'plain_text'    => false,
+			'email'			=> $this,
+			'email_contents'=> $this->format_string(
+				apply_filters(
+					'the_content',
+					$this->get_option(
+						'email_contents',
+						sprintf(
+							__( 'Hello, a note has just been added to your order: %s. For your reference, your order details are shown below. {cart}', 'woocommerce' ),
+							'<blockquote>{customer_note}</blockquote>'
+						)
+					)
+				)
+			)
+		) );
+	}
+
+	/**
+	 * Get content plain.
+	 *
+	 * @access public
+	 * @return string
+	 */
+	function get_content_plain() {
+		return wc_get_template_html( $this->template_plain, array(
+			'order'         => $this->object,
+			'email_heading' => $this->get_heading(),
+			'customer_note' => $this->customer_note,
+			'sent_to_admin' => false,
+			'plain_text'    => true,
+			'email'			=> $this
+		) );
+	}
+	
+	/**
+	 * Initialise settings form fields.
+	 */
+	public function init_form_fields() {
+		$this->form_fields = array(
+			'enabled' => array(
+				'title'         => __( 'Enable/Disable', 'woocommerce' ),
+				'type'          => 'checkbox',
+				'label'         => __( 'Enable this email notification', 'woocommerce' ),
+				'default'       => 'yes'
+			),
+			'subject' => array(
+				'title'         => __( 'Subject', 'woocommerce' ),
+				'type'          => 'text',
+				'description'   => sprintf( __( 'This controls the email subject line. Leave blank to use the default subject: <code>%s</code>.', 'woocommerce' ), $this->subject ),
+				'placeholder'   => '',
+				'default'       => '',
+				'desc_tip'      => true
+			),
+			'heading' => array(
+				'title'         => __( 'Email Heading', 'woocommerce' ),
+				'type'          => 'text',
+				'description'   => sprintf( __( 'This controls the main heading contained within the email notification. Leave blank to use the default heading: <code>%s</code>.', 'woocommerce' ), $this->heading ),
+				'placeholder'   => '',
+				'default'       => '',
+				'desc_tip'      => true
+			),
+			'email_type' => array(
+				'title'         => __( 'Email type', 'woocommerce' ),
+				'type'          => 'select',
+				'description'   => __( 'Choose which format of email to send.', 'woocommerce' ),
+				'default'       => 'html',
+				'class'         => 'email_type wc-enhanced-select',
+				'options'       => $this->get_email_type_options(),
+				'desc_tip'      => true
+			),
+			'email_contents' => array(
+				'title'			=> __( 'Email Contents', 'woocommerce' ),
+				'type'			=> 'wp_editor',
+				'description'	=> sprintf( __('This controls the main content of the email. You can use shortcodes from the %s', 'woocommerce'), $this->get_shortcodelist()),
+				'placeholder'	=> '',
+				'class'			=> 'email_content wp-editor',
+				'desc_tip'		=> false
+			)
+		);
+	}
+	
+	/**
+	 * Generates the list of all available shortcode
+	 */
+	public function get_shortcodelist( $list = '' ){
+		// Find/replace
+		$shortcodes = array(
+			'{site_url}' => __('Displays website URL', 'woothemes'),
+			'{order_date}' => sprintf(__('Displays the order date in %s format', 'woothemes'), date_i18n( wc_date_format(), strtotime(date('c')) )),
+			'{order_number}' => __('Displays the order nummber', 'woothemes'),
+			'{order_url}' => __('Displays the order URL', 'woothemes'),
+			'{order_edit_url}' => __('Displays the order edit URL (WordPress Back Office URL)', 'woothemes'),
+			'{account_url}' => __('Displays the My Account page URL', 'woothemes'),
+			'{client_name}' => __('Displays the Customer Registered Name', 'woothemes'),
+			'{client_first_name}' => __('Displays the Customer Registered First Name', 'woothemes'),
+			'{client_last_name}' => __('Displays the Customer Registered Last Name', 'woothemes'),
+			'{client_email}' => __('Displays the Customer Registered Email', 'woothemes'),
+			'{client_tel}' => __('Displays the Customer Registered Contact Number', 'woothemes'),
+			'{payment_url}' => __('Displays the payment URL', 'woothemes'),
+			'{payment_method}' => __('Displays the payment method (example: paypal)', 'woothemes'),
+			'{billing_first_name}' => __('Displays the customer\'s billing first name', 'woothemes'),
+			'{billing_last_name}' => __('Displays the customer\'s billing last name', 'woothemes'),
+			'{addresses}' => __('Displays the customer\'s billing address', 'woothemes'),
+			'{cart}' => __('Displays the tabulated order details', 'woothemes')
+		);
+		
+		foreach( $shortcodes as $code=>$desc ){
+			$list .= sprintf(' <span title="%s" style="display: inline-block;background: #cccccc;padding: 0 5px;font-size: 12px;font-weight: bold;font-style: normal;color: #000;margin-right: 3px;">%s</span>', $desc, $code);
+		}
+		
+		return $list;
+	}
+	
+	/**
+	 * Generate Textarea HTML with WP Editor
+	 *
+	 * @param  mixed $key
+	 * @param  mixed $data
+	 * @since  1.0.0
+	 * @return string
+	 */
+	public function generate_wp_editor_html( $key, $data ) {
+
+		$field    = $this->get_field_key( $key );
+		$defaults = array(
+			'title'             => '',
+			'disabled'          => false,
+			'class'             => '',
+			'css'               => '',
+			'placeholder'       => '',
+			'type'              => 'text',
+			'desc_tip'          => false,
+			'description'       => '',
+			'custom_attributes' => array()
+		);
+
+		$data = wp_parse_args( $data, $defaults );
+
+		ob_start();
+		?>
+		<tr valign="top">
+			<th scope="row" class="titledesc">
+				<label for="<?php echo esc_attr( $field ); ?>"><?php echo wp_kses_post( $data['title'] ); ?></label>
+				<?php echo $this->get_tooltip_html( $data ); ?>
+			</th>
+			<td class="forminp">
+				<fieldset>
+					<legend class="screen-reader-text"><span><?php echo wp_kses_post( $data['title'] ); ?></span></legend><?php
+					
+					wp_editor(
+						$this->get_option( $key ),					// Content
+						esc_attr( $field ),							// ID Attribute
+						array(										// Settings
+							'wpautop' => true,
+							'media_buttons' => false,
+							'textarea_name' => esc_attr( $field )
+						)
+					);
+					
+					/*?><textarea rows="3" cols="20" class="input-text wide-input <?php echo esc_attr( $data['class'] ); ?>" type="<?php echo esc_attr( $data['type'] ); ?>" name="<?php echo esc_attr( $field ); ?>" id="<?php echo esc_attr( $field ); ?>" style="<?php echo esc_attr( $data['css'] ); ?>" placeholder="<?php echo esc_attr( $data['placeholder'] ); ?>" <?php disabled( $data['disabled'], true ); ?> <?php echo $this->get_custom_attribute_html( $data ); ?>><?php echo esc_textarea( $this->get_option( $key ) ); ?></textarea><?php*/
+					
+					echo $this->get_description_html( $data ); ?>
+				</fieldset>
+			</td>
+		</tr>
+		<?php
+
+		return ob_get_clean();
+	}
+	
+	/**
+	 * Validate Textarea with WP Editor Field.
+	 *
+	 * Make sure the data is escaped correctly, etc.
+	 *
+	 * @param  mixed $key
+	 * @since  1.0.0
+	 * @return string
+	 */
+	public function validate_wp_editor_field( $key ) {
+
+		$text  = $this->get_option( $key );
+		$field = $this->get_field_key( $key );
+
+		if ( isset( $_POST[ $field ] ) ) {
+
+			$text = wp_kses( trim( stripslashes( $_POST[ $field ] ) ),
+				array_merge(
+					array(
+						'iframe' => array( 'src' => true, 'style' => true, 'id' => true, 'class' => true )
+					),
+					wp_kses_allowed_html( 'post' )
+				)
+			);
+		}
+
+		return $text;
+	}
+}
+
+endif;
